@@ -12,21 +12,25 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Güvenlik Kontrolü: Şifreler eksikse log ekranında net uyarı verir
-if not SUPABASE_URL or not SUPABASE_KEY or not GEMINI_KEY:
-    print("⚠️ KRİTİK UYARI: Gizli şifreler (Environment Variables) Render odasında eksik!")
+# Küresel değişkenleri hazırlıyoruz
+supabase: Client = None
+model = None
 
-# Sistem Bağlantılarını Başlatıyoruz
+# Sistem Bağlantılarını Başlatıyoruz (Güvenlik Korumalı)
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    if SUPABASE_URL and SUPABASE_KEY and GEMINI_KEY:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        genai.configure(api_key=GEMINI_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        print("✅ Tüm bulut kilitleri başarıyla açıldı!")
+    else:
+        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik veya yanlış!")
 except Exception as e:
     print(f"🔌 Bağlantı Kurulamadı Hatası: {str(e)}")
 
 app = FastAPI()
 
-# Kusursuz ve Arındırılmış Web Kullanıcı Arayüzü (HTML & JS)
+# Şık ve Sade Bir Kullanıcı Arayüzü (HTML)
 ARAYUZ_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -95,6 +99,9 @@ async def ana_sayfa():
 
 @app.post("/arastir")
 async def video_arastir(video_id: str = Form(...)):
+    if not supabase or not model:
+        return JSONResponse(content={"durum": "hata", "mesaj": "Bulut bağlantıları kurulamadı. Lütfen Render panelindeki şifreleri (Environment Variables) kontrol edin."})
+        
     try:
         # 1. Adım: Videonun altyazı metnini havada yakala
         loop = asyncio.get_event_loop()
@@ -103,12 +110,12 @@ async def video_arastir(video_id: str = Form(...)):
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # 2. Adım: Gemini API ile derinlemesine analiz et
+        # 2. Adım: Gemini API ile analiz et
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # 3. Adım: Supabase bulut veri tabanına saniyeler içinde kaydet
+        # 3. Adım: Supabase veri tabanına kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
