@@ -7,36 +7,62 @@ import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 import uvicorn
 
-# --- 1. MODÜL: ÇEVRE DEĞİŞKENLERİ VE YAPILANDIRMA ---
+# --- 1. SİBER GÜVENLİK VE GİZLİ ŞİFRELER ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# Yapboz mantığı: Modeli dinamik yaptık. Listendeki en güçlü sürümü varsayılan kıldık.
-SECILEN_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
-
 supabase: Client = None
 
-# --- 2. MODÜL: BULUT BAĞLANTILARI (KİLİTLERİ AÇMA) ---
+# --- 2. BULUT BAĞLANTILARINI ATEŞLEME ---
 try:
     if SUPABASE_URL and SUPABASE_KEY and GEMINI_KEY:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         genai.configure(api_key=GEMINI_KEY)
-        print(f"✅ Sistem Aktif! Seçilen Yapay Zeka Motoru: {SECILEN_MODEL}")
+        print("✅ Bulut Kilitleri Açıldı! Otopilot Sistemi Devrede.")
     else:
-        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik!")
+        print("⚠️ KRİTİK UYARI: Gizli şifreler (Environment Variables) bulunamadı!")
 except Exception as e:
     print(f"🔌 Bağlantı Hatası: {str(e)}")
 
+# --- 3. OTOPİLOT: KENDİ KENDİNE EN GÜNCEL MODELİ SEÇEN AKILLI DÜĞÜM ---
+def en_guncel_modeli_sec():
+    """
+    Google API'yi anlık tarayarak o an yayında olan en güncel,
+    en hızlı ve metin analizine en uygun modeli kendi kendine bulur ve uygular.
+    """
+    try:
+        aktif_modeller = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                if 'gemini' in m.name.lower():
+                    aktif_modeller.append(m.name)
+        
+        # Öncelik sıramız: En yeni nesilden başla (3.5 -> 3.1 -> 3 -> 2.5 -> 1.5)
+        oncelik_listesi = ["3.5-flash", "3.1-flash", "3-flash", "2.5-flash", "1.5-flash"]
+        for oncelik in oncelik_listesi:
+            for model_adi in aktif_modeller:
+                if oncelik in model_adi:
+                    print(f"🤖 Otopilot Seçimi: En güncel model yakalandı ({model_adi})")
+                    return model_adi
+                    
+        # Eğer özel eşleşme olmazsa Google'ın listesindeki ilk aktif modeli al
+        if aktif_modeller:
+            return aktif_modeller[0]
+    except Exception as e:
+        print(f"⚠️ Model taramada anlık hata, yedek motora geçiliyor: {e}")
+        
+    return "gemini-1.5-flash" # Her ihtimale karşı siber kalkan
+
 app = FastAPI()
 
-# Arayüz tasarımımız sabit kalıyor
+# --- 4. KUSURSUZ KULLANICI ARAYÜZÜ ---
 ARAYUZ_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>ARAŞTIRMACI KONTROL PANELİ</title>
+    <title>ARAŞTIRMACI KONTROL PANELİ (OTOPİLOT)</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; padding: 40px; text-align: center; }
         .container { max-width: 600px; background: white; padding: 30px; border-radius: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -48,8 +74,8 @@ ARAYUZ_HTML = """
 </head>
 <body>
     <div class="container">
-        <h2>🔍 ARAŞTIRMACI SİSTEMİ PANELİ</h2>
-        <p>YouTube Video ID'sini girin, bulut sistemimiz saniyeler içinde analiz etsin.</p>
+        <h2>🔍 OTOPİLOT ARAŞTIRMA PANELİ</h2>
+        <p>YouTube Video ID'sini girin, sistem en güncel modeli kendi seçip analiz etsin.</p>
         <input type="text" id="videoId" placeholder="Örn: dQw4w9WgXcQ">
         <br>
         <button onclick="arastirmayaBasla()">ARAŞTIR VE ANALİZ ET</button>
@@ -63,7 +89,7 @@ ARAYUZ_HTML = """
             const sonucDiv = document.getElementById('sonuc');
             if(!vId) { alert('Lütfen bir Video ID girin!'); return; }
             
-            btn.innerText = "Bulut Ordusu Çalışıyor... Lütfen Bekleyin...";
+            btn.innerText = "Otopilot Model Seçiyor ve Analiz Ediyor... Bekleyin...";
             btn.disabled = true;
             sonucDiv.style.display = "none";
             sonucDiv.innerHTML = "";
@@ -77,7 +103,7 @@ ARAYUZ_HTML = """
                 
                 sonucDiv.style.display = "block";
                 if(data.durum === "basarili") {
-                    sonucDiv.innerHTML = "<b>✅ BAŞARILI! Veri Bulut Kasasına Kaydoldu.</b><br><br><b>🧠 Yapay Zeka Raporu:</b><br>" + data.analiz;
+                    sonucDiv.innerHTML = "<b>✅ BAŞARILI! Veri Bulut Kasasına Kaydoldu.</b><br><br><b>🤖 Otopilotun Seçtiği Model:</b> <code>" + data.kullanilan_model + "</code><br><br><b>🧠 Yapay Zeka Raporu:</b><br>" + data.analiz;
                 } else {
                     sonucDiv.innerHTML = "<b>❌ Hata Oluştu:</b><br>" + data.mesaj;
                 }
@@ -97,40 +123,43 @@ ARAYUZ_HTML = """
 async def ana_sayfa():
     return ARAYUZ_HTML
 
-# --- 3. MODÜL: İŞ AKIŞI (WORKFLOW) VE ANALİZ DÜĞÜMÜ ---
+# --- 5. TAM OTONOM İŞLEM DÜĞÜMÜ: METNE DÖNÜŞTÜR -> MODELİ KENDİ SEÇ -> ANALİZ ET -> KAYDET ---
 @app.post("/arastir")
 async def video_arastir(video_id: str = Form(...)):
     if not supabase:
-        return JSONResponse(content={"durum": "hata", "mesaj": "Veritabanı bağlantısı yok."})
+        return JSONResponse(content={"durum": "hata", "mesaj": "Veritabanı bağlantısı kurulamadı. Şifreleri kontrol edin."})
         
     try:
-        # Düğüm 1: Videonun altyazı metnini havada yakala
+        # İŞLEM 1: Videoyu baştan sona eksiksiz metne dönüştür
         loop = asyncio.get_event_loop()
         transcript_list = await loop.run_in_executor(
             None, lambda: YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # Düğüm 2: Gemini API Modülünü Çağır ve Analiz Et
-        model = genai.GenerativeModel(SECILEN_MODEL)
+        # İŞLEM 2: Otopilotu devreye sok ve o anki EN GÜNCEL modeli kendi kendine seçtir!
+        secilen_model_adi = await loop.run_in_executor(None, en_guncel_modeli_sec)
+        
+        # İŞLEM 3: Seçilen otonom model ile derinlemesine analiz yap
+        model = genai.GenerativeModel(secilen_model_adi)
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # Düğüm 3: Supabase bulut veri tabanına kaydet
+        # İŞLEM 4: Elde edilen tüm veriyi, analizi ve kullanılan modeli Supabase'e kalıcı olarak kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
             "konusma_metni": tam_metin,
+            "kullanilan_model": secilen_model_adi,
             "yapay_zeka_analizi": {"rapor": yapay_zeka_raporu}
         }
         await loop.run_in_executor(None, lambda: supabase.table("arastirmaci_verileri").insert(veri_blogu).execute())
         
-        return JSONResponse(content={"durum": "basarili", "analiz": yapay_zeka_raporu})
+        return JSONResponse(content={"durum": "basarili", "kullanilan_model": secilen_model_adi, "analiz": yapay_zeka_raporu})
     except Exception as e:
         return JSONResponse(content={"durum": "hata", "mesaj": str(e)})
 
-# --- 4. MODÜL: SUNUCU ATEŞLEME ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
