@@ -12,25 +12,29 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Küresel değişkenleri hazırlıyoruz
+# Güvenlik Korumalı Başlatıcı Değişkenler
 supabase: Client = None
 model = None
 
-# Sistem Bağlantılarını Başlatıyoruz (Güvenlik Korumalı)
 try:
     if SUPABASE_URL and SUPABASE_KEY and GEMINI_KEY:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        genai.configure(api_key=GEMINI_KEY)
+        # Şifrelerin başındaki ve sonundaki görünmez boşlukları temizliyoruz
+        url_temiz = SUPABASE_URL.strip()
+        key_temiz = SUPABASE_KEY.strip()
+        gemini_temiz = GEMINI_KEY.strip()
+
+        supabase = create_client(url_temiz, key_temiz)
+        genai.configure(api_key=gemini_temiz)
         model = genai.GenerativeModel('gemini-1.5-flash')
         print("✅ Tüm bulut kilitleri başarıyla açıldı!")
     else:
-        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik veya yanlış!")
+        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik veya boş!")
 except Exception as e:
     print(f"🔌 Bağlantı Kurulamadı Hatası: {str(e)}")
 
 app = FastAPI()
 
-# Şık ve Sade Bir Kullanıcı Arayüzü (HTML)
+# Kusursuz ve Arındırılmış Web Kullanıcı Arayüzü (HTML)
 ARAYUZ_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -110,12 +114,12 @@ async def video_arastir(video_id: str = Form(...)):
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # 2. Adım: Gemini API ile analiz et
+        # 2. Adım: Gemini API ile derinlemesine analiz et
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # 3. Adım: Supabase veri tabanına kaydet
+        # 3. Adım: Supabase bulut veri tabanına saniyeler içinde kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
