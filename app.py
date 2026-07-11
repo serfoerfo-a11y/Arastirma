@@ -5,24 +5,33 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client, Client
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
+import uvicorn
 
 # Bulut Sunucusundaki Gizli Şifreleri Güvenli Odadan Çağırıyoruz
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Eğer şifreler eksikse sistemi çökertmeden uyarı verecek güvenlik önlemi
+if not SUPABASE_URL or not SUPABASE_KEY or not GEMINI_KEY:
+    print("KRİTİK HATA: Gizli şifreler (Environment Variables) Render'da eksik veya yanlış girilmiş!")
+
 # Sistem Bağlantılarını Başlatıyoruz
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    genai.configure(api_key=GEMINI_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    print(f"Bağlantı Hatası: {str(e)}")
 
 app = FastAPI()
 
 # Şık ve Sade Bir Kullanıcı Arayüzü (HTML)
 ARAYUZ_HTML = """
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
+    <meta charset="UTF-8">
     <title>ARAŞTIRMACI KONTROL PANELİ</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; padding: 40px; text-align: center; }
@@ -30,7 +39,7 @@ ARAYUZ_HTML = """
         input[type="text"] { width: 80%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
         button { background: #1a365d; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #2b6cb0; }
-        #sonuc { margin-top: 20px; text-align: left; background: #e2e8f0; padding: 15px; border-radius: 4px; display: none; white-space: pre-wrap; }
+        #sonuc { margin-top: 20px; text-align: left; background: #e2e8f0; padding: 15px; border-radius: 4px; display: none; white-space: pre-wrap; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -45,7 +54,7 @@ ARAYUZ_HTML = """
 
     <script>
         async function arastirmayaBasla() {
-            const vId = document.getElementById('videoId').value;
+            const vId = document.getElementById('videoId').value.trim();
             const btn = document.querySelector('button');
             const sonucDiv = document.getElementById('sonuc');
             if(!vId) { alert('Lütfen bir Video ID girin!'); return; }
@@ -53,6 +62,7 @@ ARAYUZ_HTML = """
             btn.innerText = "Bulut Ordusu Çalışıyor... Lütfen Bekleyin...";
             btn.disabled = true;
             sonucDiv.style.display = "none";
+            sonucDiv.innerHTML = "";
 
             try {
                 let formData = new FormData();
@@ -63,12 +73,13 @@ ARAYUZ_HTML = """
                 
                 sonucDiv.style.display = "block";
                 if(data.durum === "basarili") {
-                    sonucDiv.innerHTML = "<b>BAŞARILI! Veri Bulut Kasasına Kaydoldu.</b>\\n\\n<b>Yapay Zeka Raporu:</b>\\n" + data.analiz;
+                    sonucDiv.innerHTML = "<b>✅ BAŞARILI! Veri Bulut Kasasına Kaydoldu.</b><br><br><b>🧠 Yapay Zeka Raporu:</b><br>" + data.analiz;
                 } else {
-                    sonucDiv.innerHTML = "<b>Hata Oluştu:</b>\\n" + data.mesaj;
+                    sonucDiv.innerHTML = "<b>❌ Hata Oluştu:</b><br>" + data.mesaj;
                 }
             } catch(e) {
-                alert('Sistem bir hata verdi!');
+                sonucDiv.style.display = "block";
+                sonucDiv.innerHTML = "<b>❌ Sistem bir hata verdi:</b><br>" + e;
             }
             btn.innerText = "ARAŞTIR VE ANALİZ ET";
             btn.disabled = false;
@@ -85,19 +96,19 @@ async def ana_sayfa():
 @app.post("/arastir")
 async def video_arastir(video_id: str = Form(...)):
     try:
-        # 1. Adım: Videonun altyazı metnini YouTube sunucularından saniyeler içinde havada yakalıyoruz
+        # 1. Adım: Videonun altyazı metnini çek
         loop = asyncio.get_event_loop()
         transcript_list = await loop.run_in_executor(
             None, lambda: YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # 2. Adım: Milyonlarca kelime olsa dahi bir kerede yutabilen Gemini API'ye metni analize gönderiyoruz
+        # 2. Adım: Gemini API ile analiz
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # 3. Adım: Bilgisayarına hiç indirmeden veriyi doğrudan Frankfurt'taki bulut kasasına yazıyoruz
+        # 3. Adım: Supabase veri tabanına kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
@@ -109,3 +120,8 @@ async def video_arastir(video_id: str = Form(...)):
         return JSONResponse(content={"durum": "basarili", "analiz": yapay_zeka_raporu})
     except Exception as e:
         return JSONResponse(content={"durum": "hata", "mesaj": str(e)})
+
+# Render'ın beklediği dışa açılan portu doğrudan içeriden ateşliyoruz
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
