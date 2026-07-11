@@ -12,9 +12,9 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Eğer şifreler eksikse sistemi çökertmeden uyarı verecek güvenlik önlemi
+# Güvenlik Kontrolü: Şifreler eksikse log ekranında net uyarı verir
 if not SUPABASE_URL or not SUPABASE_KEY or not GEMINI_KEY:
-    print("KRİTİK HATA: Gizli şifreler (Environment Variables) Render'da eksik veya yanlış girilmiş!")
+    print("⚠️ KRİTİK UYARI: Gizli şifreler (Environment Variables) Render odasında eksik!")
 
 # Sistem Bağlantılarını Başlatıyoruz
 try:
@@ -22,11 +22,11 @@ try:
     genai.configure(api_key=GEMINI_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    print(f"Bağlantı Hatası: {str(e)}")
+    print(f"🔌 Bağlantı Kurulamadı Hatası: {str(e)}")
 
 app = FastAPI()
 
-# Şık ve Sade Bir Kullanıcı Arayüzü (HTML)
+# Kusursuz ve Arındırılmış Web Kullanıcı Arayüzü (HTML & JS)
 ARAYUZ_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -46,7 +46,7 @@ ARAYUZ_HTML = """
     <div class="container">
         <h2>🔍 ARAŞTIRMACI SİSTEMİ PANELİ</h2>
         <p>YouTube Video ID'sini girin, bulut sistemimiz saniyeler içinde analiz etsin.</p>
-        <input type="text" id="videoId" placeholder="Örn: dQw4w9WgXcQ (Videonun linkindeki v= kısmından sonraki kod)">
+        <input type="text" id="videoId" placeholder="Örn: dQw4w9WgXcQ">
         <br>
         <button onclick="arastirmayaBasla()">ARAŞTIR VE ANALİZ ET</button>
         <div id="sonuc"></div>
@@ -96,19 +96,19 @@ async def ana_sayfa():
 @app.post("/arastir")
 async def video_arastir(video_id: str = Form(...)):
     try:
-        # 1. Adım: Videonun altyazı metnini çek
+        # 1. Adım: Videonun altyazı metnini havada yakala
         loop = asyncio.get_event_loop()
         transcript_list = await loop.run_in_executor(
             None, lambda: YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # 2. Adım: Gemini API ile analiz
+        # 2. Adım: Gemini API ile derinlemesine analiz et
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # 3. Adım: Supabase veri tabanına kaydet
+        # 3. Adım: Supabase bulut veri tabanına saniyeler içinde kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
@@ -121,7 +121,7 @@ async def video_arastir(video_id: str = Form(...)):
     except Exception as e:
         return JSONResponse(content={"durum": "hata", "mesaj": str(e)})
 
-# Render'ın beklediği dışa açılan portu doğrudan içeriden ateşliyoruz
+# Render sunucusunun port kilidini açan otomatik başlatıcı motor
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
