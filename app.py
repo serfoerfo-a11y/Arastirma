@@ -7,34 +7,30 @@ import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 import uvicorn
 
-# Bulut Sunucusundaki Gizli Şifreleri Güvenli Odadan Çağırıyoruz
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+# --- 1. MODÜL: ÇEVRE DEĞİŞKENLERİ VE YAPILANDIRMA ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# Güvenlik Korumalı Başlatıcı Değişkenler
+# Yapboz mantığı: Modeli dinamik yaptık. Listendeki en güçlü sürümü varsayılan kıldık.
+SECILEN_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+
 supabase: Client = None
-model = None
 
+# --- 2. MODÜL: BULUT BAĞLANTILARI (KİLİTLERİ AÇMA) ---
 try:
     if SUPABASE_URL and SUPABASE_KEY and GEMINI_KEY:
-        # Şifrelerin başındaki ve sonundaki görünmez boşlukları temizliyoruz
-        url_temiz = SUPABASE_URL.strip()
-        key_temiz = SUPABASE_KEY.strip()
-        gemini_temiz = GEMINI_KEY.strip()
-
-        supabase = create_client(url_temiz, key_temiz)
-        genai.configure(api_key=gemini_temiz)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("✅ Tüm bulut kilitleri başarıyla açıldı!")
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        genai.configure(api_key=GEMINI_KEY)
+        print(f"✅ Sistem Aktif! Seçilen Yapay Zeka Motoru: {SECILEN_MODEL}")
     else:
-        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik veya boş!")
+        print("⚠️ KRİTİK UYARI: Render ayarlarındaki gizli şifreler eksik!")
 except Exception as e:
-    print(f"🔌 Bağlantı Kurulamadı Hatası: {str(e)}")
+    print(f"🔌 Bağlantı Hatası: {str(e)}")
 
 app = FastAPI()
 
-# Kusursuz ve Arındırılmış Web Kullanıcı Arayüzü (HTML)
+# Arayüz tasarımımız sabit kalıyor
 ARAYUZ_HTML = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -101,25 +97,27 @@ ARAYUZ_HTML = """
 async def ana_sayfa():
     return ARAYUZ_HTML
 
+# --- 3. MODÜL: İŞ AKIŞI (WORKFLOW) VE ANALİZ DÜĞÜMÜ ---
 @app.post("/arastir")
 async def video_arastir(video_id: str = Form(...)):
-    if not supabase or not model:
-        return JSONResponse(content={"durum": "hata", "mesaj": "Bulut bağlantıları kurulamadı. Lütfen Render panelindeki şifreleri (Environment Variables) kontrol edin."})
+    if not supabase:
+        return JSONResponse(content={"durum": "hata", "mesaj": "Veritabanı bağlantısı yok."})
         
     try:
-        # 1. Adım: Videonun altyazı metnini havada yakala
+        # Düğüm 1: Videonun altyazı metnini havada yakala
         loop = asyncio.get_event_loop()
         transcript_list = await loop.run_in_executor(
             None, lambda: YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         )
         tam_metin = " ".join([t['text'] for t in transcript_list])
         
-        # 2. Adım: Gemini API ile derinlemesine analiz et
+        # Düğüm 2: Gemini API Modülünü Çağır ve Analiz Et
+        model = genai.GenerativeModel(SECILEN_MODEL)
         prompt = f"Aşağıdaki konuşma metnini eksiksiz, insan gibi derinlemesine incele ve bana en can alıcı noktalarını kronolojik özet halinde Türkçe raporla:\n\n{tam_metin}"
         response = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
         yapay_zeka_raporu = response.text
         
-        # 3. Adım: Supabase bulut veri tabanına saniyeler içinde kaydet
+        # Düğüm 3: Supabase bulut veri tabanına kaydet
         veri_blogu = {
             "video_id": video_id,
             "baslik": f"Video {video_id}",
@@ -132,7 +130,7 @@ async def video_arastir(video_id: str = Form(...)):
     except Exception as e:
         return JSONResponse(content={"durum": "hata", "mesaj": str(e)})
 
-# Render sunucusunun port kilidini açan otomatik başlatıcı motor
+# --- 4. MODÜL: SUNUCU ATEŞLEME ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
